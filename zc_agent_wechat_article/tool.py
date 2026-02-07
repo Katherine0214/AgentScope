@@ -601,20 +601,20 @@ def generate_article(source_dir: str = "saved/full_content", output_dir: str = "
 
 
 def generate_title(file_path: str = "saved/final_paper.txt", output_dir: str = "saved") -> ToolResponse:
-    """为论文生成公众号爆款标题。
+    """为论文生成5个公众号爆款标题。
 
-    该工具会读取指定路径的论文文件，调用LLM生成一句简洁、有吸引力的公众号爆款标题，
+    该工具会读取指定路径的论文文件，调用LLM生成5个不同风格的简洁、有吸引力的公众号爆款标题，
     并将标题保存到指定目录。
 
     Args:
         file_path (`str`):
             论文文件路径，默认为 "saved/final_paper.txt"
         output_dir (`str`):
-            输出目录路径，标题将保存到该目录下的 final_paper_title.txt，默认为 "saved"
+            输出目录路径，标题将保存到该目录下的 final_paper_titles.txt，默认为 "saved"
 
     Returns:
         `ToolResponse`:
-            生成结果，包含标题内容、保存路径和生成摘要信息
+            生成结果，包含5个标题内容、保存路径和生成摘要信息
     """
 
     # 公众号爆款标题生成提示词
@@ -622,14 +622,16 @@ def generate_title(file_path: str = "saved/final_paper.txt", output_dir: str = "
 你是一位资深的公众号运营专家和爆款文案写手，擅长创作吸睛、具有传播力的公众号标题。你深刻理解读者的心理需求，能够准确抓住文章核心价值并提炼出吸引眼球的标题。
 
 # Task
-请根据提供的【文章内容】，生成一句话的公众号爆款标题。
+请根据提供的【文章内容】，生成5个不同风格的公众号爆款标题。
 
 # Constraints
 1. 标题要求：
-   - 必须是一句话，简洁明了
+   - 必须生成5个标题
+   - 每个标题简洁明了
    - 具有吸引力和传播力，能够激发读者阅读兴趣
    - 突出文章的核心价值或亮点
    - 语言生动，富有感染力
+   - 5个标题应有不同的风格和角度（如：数据型、疑问型、故事型、痛点型、价值型等）
 
 2. 避免以下情况：
    - 过度夸张或虚假宣传
@@ -637,8 +639,14 @@ def generate_title(file_path: str = "saved/final_paper.txt", output_dir: str = "
    - 使用过多的特殊符号或表情
 
 3. 输出格式：
-   - 直接输出标题，不要有任何额外说明或标记
-   - 不要输出 "标题："、"Title:" 等前缀
+   - 按照以下格式输出，每个标题占一行，前面加上序号：
+     1. [标题1]
+     2. [标题2]
+     3. [标题3]
+     4. [标题4]
+     5. [标题5]
+   - 不要输出 "标题："、"Title:" 等其他前缀
+   - 确保输出5个完整的标题
 
 # Input
 """
@@ -677,11 +685,34 @@ def generate_title(file_path: str = "saved/final_paper.txt", output_dir: str = "
 
         return reasoning_content, answer_content
 
-    def save_title_to_file(title: str, output_path: str) -> None:
+    def save_title_to_file(titles: list[str], output_path: str) -> None:
         """保存标题到文件"""
         os.makedirs(output_dir, exist_ok=True)
         with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(title)
+            for i, title in enumerate(titles, 1):
+                f.write(f"{i}. {title}\n")
+
+    def extract_titles_from_response(answer_content: str) -> list[str]:
+        """从LLM回复中提取5个标题"""
+        titles = []
+        lines = answer_content.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            # 匹配序号格式，如 "1. 标题内容" 或 "1)[标题内容]" 等
+            match = re.match(r'^\d+[.)\]]?\s*(.+)$', line)
+            if match:
+                title = match.group(1).strip()
+                # 去除可能的前缀标记
+                title = re.sub(r'^[\[(【][标题]*[\])]】]?\s*', '', title)
+                if title:
+                    titles.append(title)
+            elif line and not re.match(r'^[#-]+', line) and len(titles) < 5:
+                # 如果没有序号前缀且标题数量不足5个，尝试直接使用
+                titles.append(line)
+        
+        # 确保最多返回5个标题
+        return titles[:5]
 
     try:
         result_text = f"开始生成标题...\n"
@@ -707,15 +738,19 @@ def generate_title(file_path: str = "saved/final_paper.txt", output_dir: str = "
         result_text += "调用LLM生成标题...\n"
         reasoning_content, answer_content = call_llm_generate_title(content)
 
-        # 提取标题（去除可能的空格和换行）
-        title = answer_content.strip()
-        result_text += f"✓ 标题生成完成\n\n"
-        result_text += f"生成的标题：{title}\n"
-        result_text += f"标题长度：{len(title)} 字符\n\n"
+        # 提取5个标题
+        titles = extract_titles_from_response(answer_content)
+        result_text += f"✓ 标题生成完成，共生成 {len(titles)} 个标题\n\n"
+        
+        result_text += "生成的标题：\n"
+        result_text += "=" * 60 + "\n"
+        for i, title in enumerate(titles, 1):
+            result_text += f"{i}. {title}\n"
+        result_text += "=" * 60 + "\n\n"
 
         # 保存标题
-        output_path = os.path.join(output_dir, "final_paper_title.txt")
-        save_title_to_file(title, output_path)
+        output_path = os.path.join(output_dir, "final_paper_titles.txt")
+        save_title_to_file(titles, output_path)
         result_text += f"✓ 标题已保存到: {output_path}\n"
 
         return ToolResponse(
